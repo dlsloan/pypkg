@@ -1,4 +1,5 @@
 #pragma $pip install pandas
+#pragma $pip install pandas-stubs
 
 import pandas as pd
 

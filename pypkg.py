@@ -3,35 +3,34 @@
 
 import argparse
 import base64
+import ctrace
 import hashlib
 import re
-import shutil
-import subprocess as sp
 import sys
+import tempfile as tmp
 import typing as t
-import venv
 import zlib
 
 from pathlib import Path
+
+from venv_helper import *
 
 pypkg_dir = Path('~/.pypkg').expanduser().resolve(strict=False)
 
 src_dir = Path(__file__).resolve().parent
 pypkg_base = src_dir / 'pypkg_base.py'
 
-def exception_hook(exc_type, exc_value, tb):
-    print(f"{exc_type.__name__}, Message: {exc_value}", file=sys.stderr)
-    local_vars = {}
-    while tb:
-        filename = tb.tb_frame.f_code.co_filename
-        name = tb.tb_frame.f_code.co_name
-        line_no = tb.tb_lineno
-        print(f"  {filename}:{line_no}, in {name}", file=sys.stderr)
-
-        local_vars = tb.tb_frame.f_locals
-        tb = tb.tb_next
-
-sys.excepthook = exception_hook
+def dump_file(path: Path):
+    head = f"# {path.name} -"
+    if len(head) < 80:
+        head += '-' * (80 - len(head))
+    tail = f"# {path.name} -"
+    if len(tail) < 80:
+        tail += '-' * (80 - len(tail))
+    yield head + '\n'
+    with path.open() as f:
+        yield from f
+    yield tail + '\n'
 
 class Pkg:
     re_pragma_pip = re.compile(r'^\s*#pragma\s+\$pip\s+install\s+(\S+)(?:\s|$)')
@@ -128,6 +127,9 @@ class Pkg:
         yield '}\n'
         yield f"files_hash = {str(files_hash.hexdigest().encode())[1:]}\n"
         yield f"exec_root = {str(str(self.target).encode())[1:]}\n"
+        yield '\n'
+        yield from dump_file(src_dir / 'venv_helper.py')
+        yield from dump_file(src_dir / 'ctrace.py')
         for line in self.tail:
             yield line + '\n'
 
@@ -136,6 +138,35 @@ class Pkg:
             for line in self.dump_lines():
                 f.write(line)
 
+    def dep_list(self):
+        ret = []
+        dep_pkgs = sorted(self.deps.keys())
+        for pkg in dep_pkgs:
+            ver = self.deps[pkg]
+            if ver is None:
+                dep = pkg
+            else:
+                dep = f"{pkg}=={ver}"
+            ret.append(dep)
+        return ret
+
+    def lint(self, env=None):
+        with tmp.TemporaryDirectory() as tmp_dir:
+            tmp_dir = Path(tmp_dir)
+            for file_name in self.files:
+                data, chmod = self.files[file_name]
+                path = tmp_dir / file_name
+                path.write_bytes(data)
+                path.chmod(chmod)
+            with dep_venv(self.dep_list() + ['mypy'], env=env) as venv:
+                for file_name in self.files:
+                    if file_name.suffix.lower() == '.py':
+                        path = tmp_dir / file_name
+                        ret = venv.runpy('-m', 'mypy', '--strict', path, env=env, stdout=sp.PIPE, stderr=sp.PIPE)
+                        if ret.returncode:
+                            #print('\n', file=sys.stderr)
+                            #print(ret.stdout.decode(), file=sys.stderr, end='', flush=True)
+                            raise sp.CalledProcessError(ret.returncode, ret.args, stderr=ret.stderr)
 
 head, tail = pypkg_base.read_text().split('#INSERT_APP_DATA\n')
 Pkg.head = head.split('\n')[:-1]
