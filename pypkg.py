@@ -5,6 +5,7 @@ import argparse
 import base64
 import ctrace
 import hashlib
+import os
 import re
 import sys
 import tempfile as tmp
@@ -164,9 +165,7 @@ class Pkg:
                         path = tmp_dir / file_name
                         ret = venv.runpy('-m', 'mypy', '--strict', path, env=env, stdout=sp.PIPE, stderr=sp.PIPE)
                         if ret.returncode:
-                            #print('\n', file=sys.stderr)
-                            #print(ret.stdout.decode(), file=sys.stderr, end='', flush=True)
-                            raise sp.CalledProcessError(ret.returncode, ret.args, stderr=ret.stderr)
+                            raise sp.CalledProcessError(ret.returncode, ret.args, stderr=ret.stdout)
 
 head, tail = pypkg_base.read_text().split('#INSERT_APP_DATA\n')
 Pkg.head = head.split('\n')[:-1]
@@ -175,7 +174,14 @@ Pkg.tail = tail.split('\n')[:-1]
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('root_doc', type=Path)
+    parser.add_argument('--no-lint', action='store_true')
     args = parser.parse_args()
     pkg = Pkg(args.root_doc)
+    try:
+        if not args.no_lint:
+            pkg.lint()
+    except sp.CalledProcessError as err:
+        print(err.stderr.decode(), end='', file=sys.stderr, flush=True)
+        exit(err.returncode)
     for line in pkg.dump_lines():
         print(line, end='')

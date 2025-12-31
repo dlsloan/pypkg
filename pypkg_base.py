@@ -1,26 +1,20 @@
 #!/usr/bin/env python3
 
 # Note: this is not a sandbox against malicious code, it can messed with quite easily
+#INSERT_APP_DATA
 
 import base64
-import contextlib
-import hashlib
-import os
-import shutil
 import sys
-import subprocess as sp
 import tempfile
-import time
-import venv
 import zlib
 
 from pathlib import Path
 
-#INSERT_APP_DATA
-
 if __name__ == '__main__':
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        with dep_venv(deps) as venv:
+    with dep_venv(deps) as venv:
+        if len(sys.argv) > 1 and sys.argv[1] == '--install-deps-only':
+            exit(0)
+        with tempfile.TemporaryDirectory() as tmp_dir:
             base = Path(tmp_dir)
             src_dir = base / 'src'
             src_dir.mkdir()

@@ -19,7 +19,7 @@ class TestRunPackages(unittest.TestCase):
         return sp.run([str(c) for c in cmd], env=cls.env, stdout=sp.PIPE, stderr=sp.PIPE)
 
     @classmethod
-    def check_pkg(cls, pkg, *, strict=True, print_err=True):
+    def check_pkg(cls, pkg, *, strict=True, print_err=True, deps_only=False):
         with tmp.TemporaryDirectory() as tmp_dir:
             pkg_file = Path(tmp_dir) / 'tmp.py'
             pkg = pypkg.Pkg(git_dir / pkg)
@@ -28,13 +28,16 @@ class TestRunPackages(unittest.TestCase):
             if strict:
                 try:
                     env = dict(cls.env)
-                    env['PYPKG_VENV_BASE'] = Path('~/.pypkg/test-venv').expanduser()
+                    env['PYPKG_VENV_BASE'] = str(Path('~/.pypkg/test-venv').expanduser())
                     pkg.lint(env=env)
                 except sp.CalledProcessError as err:
                     if print_err:
                         print('\n' + err.stderr.decode(), file=sys.stderr, end='')
                     raise
-            return cls.run_cmd(pkg_file)
+            if deps_only:
+                return cls.run_cmd(pkg_file, '--install-deps-only')
+            else:
+                return cls.run_cmd(pkg_file)
 
     @classmethod
     def setUpClass(cls):
@@ -72,6 +75,12 @@ class TestRunPackages(unittest.TestCase):
         self.assertRetZero(ret)
         self.assertTrue(b'Earthly Hello' in ret.stdout)
         self.assertTrue(b'Marshian Hello' in ret.stdout)
+
+    def test_pandas_hello_install(self):
+        ret = self.check_pkg('test/pandas_hello/main.py', strict=False, deps_only=True)
+        self.assertRetZero(ret)
+        self.assertEqual(ret.stdout, b'')
+        self.assertEqual(ret.stderr, b'')
 
     def test_mypy_fail(self):
         with self.assertRaises(sp.CalledProcessError):
